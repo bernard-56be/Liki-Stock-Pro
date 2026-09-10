@@ -1,18 +1,23 @@
 "use client";
 import { useState, useTransition } from "react";
 import Image from "next/image";
-import { X } from "lucide-react";
+import { X, Package, QrCode, ScanLine } from "lucide-react";
 import { createProduct, updateProduct, type Product } from "@/lib/actions/inventory";
 
 interface ProductFormProps {
   product: Product | null;
   onClose: () => void;
-  exchangeRate: number; 
+  exchangeRate: number;
 }
+
+type QrMode = 'none' | 'model' | 'unique';
 
 export default function ProductForm({ product, onClose, exchangeRate }: ProductFormProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(product?.imageUrl || null);
   const [currency, setCurrency] = useState<"USD" | "CDF">(product?.currency || "USD");
+  const [qrMode, setQrMode] = useState<QrMode>(product?.qrMode || 'none');
+  const [modelQrCode, setModelQrCode] = useState<string>(product?.modelQrCode || '');
+  const [uniqueQrCodes, setUniqueQrCodes] = useState<string>('');
   const [isPending, startTransition] = useTransition();
 
   const [purchasePrice, setPurchasePrice] = useState<string>(
@@ -39,7 +44,6 @@ export default function ProductForm({ product, onClose, exchangeRate }: ProductF
         return convertedUSD.toString();
       }
     };
-
     setPurchasePrice(convert(purchasePrice));
     setSalePrice(convert(salePrice));
     setMinPrice(convert(minPrice));
@@ -61,14 +65,23 @@ export default function ProductForm({ product, onClose, exchangeRate }: ProductF
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
+
     const formData = new FormData(e.currentTarget);
     formData.append("currency", currency);
+    formData.append("qr_mode", qrMode);
+
+    if (qrMode === 'model') {
+      formData.append("model_qr_code", modelQrCode);
+    }
+    if (qrMode === 'unique') {
+      formData.append("unique_qr_codes", uniqueQrCodes);
+    }
+
     if (isEditing && product) {
       formData.append("id", product.id);
       if (product.imageUrl) formData.append("currentImageUrl", product.imageUrl);
     }
-    
+
     startTransition(async () => {
       const action = isEditing ? updateProduct : createProduct;
       const result = await action(formData);
@@ -91,7 +104,7 @@ export default function ProductForm({ product, onClose, exchangeRate }: ProductF
           <X className="h-5 w-5 text-gray-500" />
         </button>
       </div>
-      
+
       <form onSubmit={handleSubmit} className="space-y-5 flex-1 overflow-y-auto pr-1">
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1">Nom du produit</label>
@@ -115,6 +128,89 @@ export default function ProductForm({ product, onClose, exchangeRate }: ProductF
             className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
           />
         </div>
+
+        {/* --- Sélecteur de mode QR --- */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Type de suivi</label>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setQrMode('none')}
+              className={`flex flex-col items-center gap-1 rounded-lg border-2 p-3 text-xs font-semibold transition ${
+                qrMode === 'none'
+                  ? 'border-purple-600 bg-purple-50 text-purple-700'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              <Package className="h-5 w-5" />
+              Sans QR
+            </button>
+            <button
+              type="button"
+              onClick={() => setQrMode('model')}
+              className={`flex flex-col items-center gap-1 rounded-lg border-2 p-3 text-xs font-semibold transition ${
+                qrMode === 'model'
+                  ? 'border-purple-600 bg-purple-50 text-purple-700'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              <QrCode className="h-5 w-5" />
+              QR Modèle
+            </button>
+            <button
+              type="button"
+              onClick={() => setQrMode('unique')}
+              className={`flex flex-col items-center gap-1 rounded-lg border-2 p-3 text-xs font-semibold transition ${
+                qrMode === 'unique'
+                  ? 'border-purple-600 bg-purple-50 text-purple-700'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              <ScanLine className="h-5 w-5" />
+              QR Unique
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2 italic">
+            {qrMode === 'none' && "Produit classique, aucun suivi par code QR."}
+            {qrMode === 'model' && "Un même code QR pour tout le stock (produits identiques)."}
+            {qrMode === 'unique' && "Un code QR par article (numéros de série, lots)."}
+          </p>
+        </div>
+
+        {/* Champ QR modèle */}
+        {qrMode === 'model' && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Code QR du modèle</label>
+            <input
+              type="text"
+              value={modelQrCode}
+              onChange={(e) => setModelQrCode(e.target.value)}
+              placeholder="Ex: MODELE-CIMENT-50KG"
+              required
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+            />
+          </div>
+        )}
+
+        {/* Champ QR uniques */}
+        {qrMode === 'unique' && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              Codes QR uniques (un par ligne)
+            </label>
+            <textarea
+              value={uniqueQrCodes}
+              onChange={(e) => setUniqueQrCodes(e.target.value)}
+              rows={5}
+              placeholder={"SN-0001\nSN-0002\nSN-0003"}
+              required
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-mono text-gray-800 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              {uniqueQrCodes.split('\n').filter((c) => c.trim()).length} code(s) saisi(s)
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">Devise de fixation du prix</label>
