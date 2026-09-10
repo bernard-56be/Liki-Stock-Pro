@@ -18,7 +18,7 @@ function LoginPageContent() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (isLoading) return; // Sécurité supplémentaire anti-idempotence au niveau de la fonction
+    if (isLoading) return;
     setIsLoading(true);
     setErrorMessage('');
 
@@ -30,7 +30,6 @@ function LoginPageContent() {
         setErrorMessage(result.error);
         setIsLoading(false);
       } else if (result?.success && result?.redirectTo) {
-        // Redirection côté client pour éviter l'exposition des identifiants
         router.push(result.redirectTo);
       } else {
         setErrorMessage('Réponse inattendue du serveur.');
@@ -45,41 +44,75 @@ function LoginPageContent() {
 
   return (
     <GlassCard>
-      <h1 className="text-2xl font-bold text-gray-800 text-center mb-6">Bon retour !</h1>
+      <h1 className="text-xl md:text-2xl font-bold text-gray-800 text-center mb-4 md:mb-6">
+        Bon retour !
+      </h1>
       
-      <div className="relative flex w-full bg-white/40 p-1 rounded-xl mb-6 shadow-inner border border-white/50">
-        <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-lg shadow-sm transition-transform duration-300 ease-in-out ${activeTab === 'employee' ? 'translate-x-[calc(100%+4px)]' : 'translate-x-0'}`}></div>
-        <button type="button" onClick={() => setActiveTab('owner')} className={`relative z-10 w-1/2 py-2 text-sm font-bold transition-colors duration-300 ${activeTab === 'owner' ? 'text-purple-700' : 'text-gray-500'}`}>Propriétaire</button>
-        <button type="button" onClick={() => setActiveTab('employee')} className={`relative z-10 w-1/2 py-2 text-sm font-bold transition-colors duration-300 ${activeTab === 'employee' ? 'text-purple-700' : 'text-gray-500'}`}>Employé</button>
+      {/* ✅ Boutons tabs - version SIMPLE et FIABLE */}
+      <div className="flex w-full bg-white/40 p-1 rounded-xl mb-4 md:mb-6 shadow-inner border border-white/50 gap-1">
+        <button 
+          type="button" 
+          onClick={() => setActiveTab('owner')}
+          className={`flex-1 py-2.5 text-xs md:text-sm font-bold transition-colors duration-200 rounded-lg min-h-[44px] ${
+            activeTab === 'owner' 
+              ? 'bg-white text-purple-700 shadow-sm' 
+              : 'text-gray-500 hover:bg-white/50'
+          }`}
+        >
+          Propriétaire
+        </button>
+        
+        <button 
+          type="button" 
+          onClick={() => setActiveTab('employee')}
+          className={`flex-1 py-2.5 text-xs md:text-sm font-bold transition-colors duration-200 rounded-lg min-h-[44px] ${
+            activeTab === 'employee' 
+              ? 'bg-white text-purple-700 shadow-sm' 
+              : 'text-gray-500 hover:bg-white/50'
+          }`}
+        >
+          Employé
+        </button>
       </div>
 
       {errorMessage && (
-        <div className="p-3 mb-4 rounded-xl text-sm font-bold text-center bg-red-100 text-red-600 border border-red-200">
+        <div className="p-3 mb-3 md:mb-4 rounded-xl text-xs md:text-sm font-bold text-center bg-red-100 text-red-600 border border-red-200">
           {errorMessage}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} method="POST" className="space-y-4">
+      <form onSubmit={handleSubmit} method="POST" className="space-y-3 md:space-y-4">
         <input type="hidden" name="next" value={nextPath} />
+        
         <div className="w-full">
-          <label className="block text-xs font-bold text-gray-700 mb-1 ml-1 uppercase">Email</label>
-          <input type="email" name="email" required placeholder={activeTab === 'owner' ? "patron@boutique.com" : "employe@boutique.com"} className="w-full p-3 rounded-xl bg-white/60 border border-white/40 text-gray-900 outline-none focus:ring-2 focus:ring-purple-500 shadow-inner" />
+          <label className="block text-xs font-bold text-gray-700 mb-1 ml-1 uppercase">
+            Email
+          </label>
+          <input 
+            type="email" 
+            name="email" 
+            required 
+            placeholder={activeTab === 'owner' ? "patron@boutique.com" : "employe@boutique.com"} 
+            className="w-full p-3 rounded-xl bg-white/60 border border-white/40 text-sm md:text-base text-gray-900 outline-none focus:ring-2 focus:ring-purple-500 shadow-inner" 
+          />
         </div>
         
         <div className="w-full">
-          <label className="block text-xs font-bold text-gray-700 mb-1 ml-1 uppercase">Mot de passe</label>
+          <label className="block text-xs font-bold text-gray-700 mb-1 ml-1 uppercase">
+            Mot de passe
+          </label>
           <div className="relative w-full">
             <input 
               type={showPassword ? "text" : "password"} 
               name="password" 
               required 
               placeholder="••••••••" 
-              className="w-full p-3 pr-12 rounded-xl bg-white/60 border border-white/40 text-gray-900 outline-none focus:ring-2 focus:ring-purple-500 shadow-inner" 
+              className="w-full p-3 pr-12 rounded-xl bg-white/60 border border-white/40 text-sm md:text-base text-gray-900 outline-none focus:ring-2 focus:ring-purple-500 shadow-inner" 
             />
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-purple-700 transition-colors p-1"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-purple-700 transition-colors p-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
             >
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -90,15 +123,20 @@ function LoginPageContent() {
         <button 
           disabled={isLoading} 
           type="submit" 
-          className={`w-full flex justify-center items-center bg-purple-700 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-purple-800 transition-all transform mt-4 disabled:opacity-70 disabled:pointer-events-none ${!isLoading ? 'active:scale-95' : ''}`}
+          className={`w-full flex justify-center items-center bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-purple-800 transition-all transform mt-4 disabled:opacity-70 disabled:pointer-events-none min-h-[48px] text-sm md:text-base ${!isLoading ? 'active:scale-95' : ''}`}
         >
           {isLoading ? "CONNEXION EN COURS..." : "SE CONNECTER"}
         </button>
       </form>
 
-      <div className="mt-6 text-center text-sm">
-        <p className="text-gray-600">{activeTab === 'owner' ? "Nouveau propriétaire ?" : "Nouvel employé ?"}</p>
-        <Link href="/auth/register" className="font-bold text-purple-700 hover:underline">
+      <div className="mt-4 md:mt-6 text-center text-sm">
+        <p className="text-gray-600 text-xs md:text-sm">
+          {activeTab === 'owner' ? "Nouveau propriétaire ?" : "Nouvel employé ?"}
+        </p>
+        <Link 
+          href={`/auth/register?role=${activeTab}`} 
+          className="font-bold text-purple-700 hover:underline inline-block py-2 min-h-[44px] text-sm md:text-base"
+        >
           Créer un compte
         </Link>
       </div>
