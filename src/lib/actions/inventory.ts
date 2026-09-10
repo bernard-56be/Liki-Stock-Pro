@@ -15,6 +15,8 @@ export type Product = {
   imageUrl: string | null;
   stockAlerte: number;
   isLowStock: boolean;
+  qrMode: 'none' | 'model' | 'unique';
+  modelQrCode: string | null;
 };
 
 async function getBoutiqueId(): Promise<string> {
@@ -50,17 +52,16 @@ async function getBoutiqueId(): Promise<string> {
   return boutique.id;
 }
 
-export async function getProducts(): Promise<{ 
-  success: boolean; 
-  data?: Product[]; 
-  exchangeRate?: number; 
-  error?: string 
+export async function getProducts(): Promise<{
+  success: boolean;
+  data?: Product[];
+  exchangeRate?: number;
+  error?: string;
 }> {
   try {
     const boutiqueId = await getBoutiqueId();
     const supabase = await createClient();
 
-    // 1. Récupération des produits
     const { data: productsData, error: productsError } = await supabase
       .from('products')
       .select('*')
@@ -69,10 +70,9 @@ export async function getProducts(): Promise<{
 
     if (productsError) throw productsError;
 
-   // 2. Récupération du taux de change (Correction du nom de la colonne : exchange_rate)
     const { data: boutiqueData, error: boutiqueError } = await supabase
       .from('boutiques')
-      .select('exchange_rate') // ✅ On sélectionne le bon nom de colonne
+      .select('exchange_rate')
       .eq('id', boutiqueId)
       .single();
 
@@ -80,10 +80,8 @@ export async function getProducts(): Promise<{
       console.error("[SUPABASE ERROR] Impossible de charger exchange_rate :", boutiqueError.message);
     }
 
-    // Si pas d'erreur, on utilise boutiqueData.exchange_rate, sinon fallback de sécurité à 2200
     const currentRate = !boutiqueError && boutiqueData?.exchange_rate ? Number(boutiqueData.exchange_rate) : 2200;
 
-    // 3. Mapping des produits (parfaitement aligné avec le camelCase du frontend)
     const products: Product[] = productsData.map((p) => ({
       id: p.id,
       name: p.name,
@@ -95,6 +93,8 @@ export async function getProducts(): Promise<{
       imageUrl: p.image_url,
       stockAlerte: p.stock_alerte,
       isLowStock: p.quantity <= p.stock_alerte,
+      qrMode: p.qr_mode || 'none',
+      modelQrCode: p.model_qr_code || null,
     }));
 
     return { success: true, data: products, exchangeRate: currentRate };
@@ -146,13 +146,35 @@ export async function createProduct(formData: FormData): Promise<{ success: bool
     const purchasePrice = parseFloat(formData.get('purchasePrice') as string) || 0;
     const salePrice = parseFloat(formData.get('salePrice') as string) || 0;
     const minPrice = parseFloat(formData.get('minPrice') as string) || 0;
-    
+
     if (salePrice > 0 && minPrice >= salePrice) {
       return { success: false, error: "Validation échouée : Le prix minimum doit être strictement inférieur au prix de vente." };
     }
-    
-    const stockAlerte = parseInt(formData.get('min_stock') as string) || 
+
+    const stockAlerte = parseInt(formData.get('min_stock') as string) ||
                         parseInt(formData.get('stockAlerte') as string) || 5;
+
+    // --- QR gestion ---
+    const qrMode = (formData.get('qr_mode') as string) || 'none';
+    const modelQrCode = (formData.get('model_qr_code') as string)?.trim() || null;
+    const uniqueQrRaw = (formData.get('unique_qr_codes') as string) || '';
+    const uniqueQrCodes = uniqueQrRaw
+      .split('\n')
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+
+    if (qrMode === 'model' && !modelQrCode) {
+      return { success: false, error: 'Un code QR modèle est requis.' };
+    }
+
+    if (qrMode === 'unique') {
+      if (uniqueQrCodes.length === 0) {
+        return { success: false, error: 'Au moins un code QR unique est requis.' };
+      }
+      if (uniqueQrCodes.length !== quantity) {
+        return { success: false, error: `Le nombre de QR (${uniqueQrCodes.length}) doit correspondre à la quantité (${quantity}).` };
+      }
+    }
 
     const imageFile = formData.get('image') as File | null;
     const currentImageUrl = formData.get('currentImageUrl') as string | null;
@@ -166,19 +188,44 @@ export async function createProduct(formData: FormData): Promise<{ success: bool
       imageUrl = await uploadImage(imageFile, boutiqueId);
     }
 
-    const { error } = await supabase.from('products').insert({
-      boutique_id: boutiqueId,
-      name: name.trim(),
-      quantity,
-      currency,
-      purchase_price: purchasePrice,
-      sale_price: salePrice,
-      min_price: minPrice,
-      stock_alerte: stockAlerte,
-      image_url: imageUrl,
-    });
+    // Insertion du produit
+    const { data: insertedProduct, error } = await supabase
+      .from('products')
+      .insert({
+        boutique_id: boutiqueId,
+        name: name.trim(),
+        quantity,
+        currency,
+        purchase_price: purchasePrice,
+        sale_price: salePrice,
+        min_price: minPrice,
+        stock_alerte: stockAlerte,
+        image_url: imageUrl,
+        qr_mode: qrMode,
+        model_qr_code: qrMode === 'model' ? modelQrCode : null,
+      })
+      .select('id')
+      .single();
 
     if (error) throw error;
+
+    // Insertion des QR uniques
+    if (qrMode === 'unique' && insertedProduct) {
+      const qrRows = uniqueQrCodes.map((code) => ({
+        product_id: insertedProduct.id,
+        boutique_id: boutiqueId,
+        qr_code: code,
+        status: 'IN_STOCK',
+      }));
+
+      const { error: qrError } = await supabase.from('product_qr_codes').insert(qrRows);
+
+      if (qrError) {
+        // Rollback : supprimer le produit
+        await supabase.from('products').delete().eq('id', insertedProduct.id);
+        return { success: false, error: 'Erreur QR : ' + qrError.message };
+      }
+    }
 
     revalidatePath('/dashboard/owner/inventaire');
     return { success: true };
@@ -203,14 +250,17 @@ export async function updateProduct(formData: FormData): Promise<{ success: bool
     const purchasePrice = parseFloat(formData.get('purchasePrice') as string) || 0;
     const salePrice = parseFloat(formData.get('salePrice') as string) || 0;
     const minPrice = parseFloat(formData.get('minPrice') as string) || 0;
-    
+
     if (salePrice > 0 && minPrice >= salePrice) {
       return { success: false, error: "Validation échouée : Le prix minimum doit être strictement inférieur au prix de vente." };
     }
-    
-    const stockAlerte = parseInt(formData.get('min_stock') as string) || 
+
+    const stockAlerte = parseInt(formData.get('min_stock') as string) ||
                         parseInt(formData.get('stockAlerte') as string) || 5;
-                        
+
+    const qrMode = (formData.get('qr_mode') as string) || 'none';
+    const modelQrCode = (formData.get('model_qr_code') as string)?.trim() || null;
+
     const currentImageUrl = formData.get('currentImageUrl') as string | null;
     const imageFile = formData.get('image') as File | null;
 
@@ -234,6 +284,8 @@ export async function updateProduct(formData: FormData): Promise<{ success: bool
         min_price: minPrice,
         stock_alerte: stockAlerte,
         image_url: imageUrl,
+        qr_mode: qrMode,
+        model_qr_code: qrMode === 'model' ? modelQrCode : null,
       })
       .eq('id', id)
       .eq('boutique_id', boutiqueId);
