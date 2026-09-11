@@ -8,12 +8,13 @@ import {
   useEffect,
 } from 'react';
 import Image from 'next/image';
-import { Search, Edit, Trash2 } from 'lucide-react';
+import { Search, Edit, Trash2, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AnimatedSheet } from '@/components/ui/AnimatedSheet';
 import { getProducts, deleteProduct, type Product } from '@/lib/actions/inventory';
-import ProductForm from '@/components/inventory/ProductForm'; 
+import ProductForm from '@/components/inventory/ProductForm';
+import ProductDetailModal from '@/components/inventory/ProductDetailModal';
 
 function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
@@ -58,19 +59,44 @@ export function formatCurrency(amount: number, currency: 'USD' | 'CDF'): string 
 
 const ITEMS_PER_PAGE = 6;
 
-// Composant de ligne Desktop optimisé
+// Badge du mode QR
+const QrModeBadge = memo(function QrModeBadge({ mode }: { mode: 'none' | 'model' | 'unique' }) {
+  if (mode === 'none') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+        Sans QR
+      </span>
+    );
+  }
+  if (mode === 'model') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+        QR Modèle
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+      QR Unique
+    </span>
+  );
+});
+
+// Composant de ligne Desktop
 const ProductRow = memo(function ProductRow({
   product,
   exchangeRate,
   onEdit,
   onDelete,
+  onDetails,
 }: {
   product: Product;
-  exchangeRate: number; 
+  exchangeRate: number;
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
+  onDetails: (product: Product) => void;
 }) {
-  const productCurrency = product.currency || "USD";
+  const productCurrency = product.currency || 'USD';
   const isStockBas = product.quantity <= product.stockAlerte;
 
   return (
@@ -79,25 +105,21 @@ const ProductRow = memo(function ProductRow({
         <div className="flex items-center gap-3">
           <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-100 border border-gray-200">
             {product.imageUrl ? (
-              <Image
-                src={product.imageUrl}
-                alt={product.name}
-                fill
-                className="object-cover"
-              />
+              <Image src={product.imageUrl} alt={product.name} fill className="object-cover" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gray-100 text-sm">
-                📦
-              </div>
+              <div className="flex h-full w-full items-center justify-center bg-gray-100 text-sm">📦</div>
             )}
           </div>
           <div className="flex flex-col items-start gap-0.5">
             <span className="text-sm font-medium text-gray-900">{product.name}</span>
-            {isStockBas && (
-              <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 ring-1 ring-inset ring-red-600/10">
-                ⚠️ Stock bas
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              <QrModeBadge mode={product.qrMode || 'none'} />
+              {isStockBas && (
+                <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 ring-1 ring-inset ring-red-600/10">
+                  ⚠️ Stock bas
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </td>
@@ -113,6 +135,13 @@ const ProductRow = memo(function ProductRow({
       </td>
       <td className="px-4 py-3 text-right">
         <div className="flex justify-end gap-2">
+          <button
+            onClick={() => onDetails(product)}
+            className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-purple-600"
+            aria-label="Détails"
+          >
+            <Eye className="h-4 w-4" />
+          </button>
           <button
             onClick={() => onEdit(product)}
             className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600"
@@ -190,13 +219,14 @@ const Pagination = memo(function Pagination({
 
 export default function OwnerInventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [exchangeRate, setExchangeRate] = useState<number | null>(null); 
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isLoading, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     startTransition(async () => {
@@ -204,7 +234,7 @@ export default function OwnerInventoryPage() {
       if (result.success && result.data) {
         setProducts(result.data);
         if (result.exchangeRate) {
-          setExchangeRate(result.exchangeRate); 
+          setExchangeRate(result.exchangeRate);
         }
         setError(null);
       } else {
@@ -231,21 +261,24 @@ export default function OwnerInventoryPage() {
     setCurrentPage(1);
   }, []);
 
-  const handleDelete = useCallback(async (id: string) => {
-    const result = await deleteProduct(id);
-    if (result.success) {
-      setProducts((prev) => prev.filter((p) => p.id !== id));
-      const newFilteredLen = filteredProducts.length - 1;
-      const newTotalPages = Math.ceil(newFilteredLen / ITEMS_PER_PAGE);
-      if (currentPage > newTotalPages && newTotalPages > 0) {
-        setCurrentPage(newTotalPages);
-      } else if (newFilteredLen === 0) {
-        setCurrentPage(1);
+  const handleDelete = useCallback(
+    async (id: string) => {
+      const result = await deleteProduct(id);
+      if (result.success) {
+        setProducts((prev) => prev.filter((p) => p.id !== id));
+        const newFilteredLen = filteredProducts.length - 1;
+        const newTotalPages = Math.ceil(newFilteredLen / ITEMS_PER_PAGE);
+        if (currentPage > newTotalPages && newTotalPages > 0) {
+          setCurrentPage(newTotalPages);
+        } else if (newFilteredLen === 0) {
+          setCurrentPage(1);
+        }
+      } else {
+        setError(result.error || 'Erreur lors de la suppression');
       }
-    } else {
-      setError(result.error || 'Erreur lors de la suppression');
-    }
-  }, [filteredProducts.length, currentPage]);
+    },
+    [filteredProducts.length, currentPage]
+  );
 
   const handleOpenCreate = () => {
     setEditingProduct(null);
@@ -288,13 +321,16 @@ export default function OwnerInventoryPage() {
               Gestion des produits ({products.length} produits, pagination 6/page)
             </p>
           </div>
-          <Button onClick={handleOpenCreate} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 shadow-sm transition-colors">
+          <Button
+            onClick={handleOpenCreate}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 shadow-sm transition-colors"
+          >
             Ajouter un produit
           </Button>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <SearchBar value={searchTerm} onChange={handleSearch} />
-          
+
           {/* Tableau Desktop */}
           <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
             <table className="min-w-full text-sm">
@@ -313,9 +349,10 @@ export default function OwnerInventoryPage() {
                   <ProductRow
                     key={product.id}
                     product={product}
-                    exchangeRate={exchangeRate} 
+                    exchangeRate={exchangeRate}
                     onEdit={handleOpenEdit}
                     onDelete={handleDelete}
+                    onDetails={setSelectedProduct}
                   />
                 ))}
                 {paginatedProducts.length === 0 && (
@@ -332,7 +369,7 @@ export default function OwnerInventoryPage() {
           {/* Cartes Mobile */}
           <div className="grid gap-3 md:hidden">
             {paginatedProducts.map((product) => {
-              const productCurrency = product.currency || "USD";
+              const productCurrency = product.currency || 'USD';
               return (
                 <Card key={product.id} className="border border-gray-200 shadow-sm">
                   <CardContent className="space-y-2 p-4">
@@ -353,10 +390,13 @@ export default function OwnerInventoryPage() {
                         )}
                       </div>
                       <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-gray-900">{product.name}</h3>
+                          <QrModeBadge mode={product.qrMode || 'none'} />
                           {product.quantity <= product.stockAlerte && (
-                            <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full font-medium">Stock bas</span>
+                            <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full font-medium">
+                              Stock bas
+                            </span>
                           )}
                         </div>
                         <p className="text-sm text-gray-500">Stock : {product.quantity}</p>
@@ -377,6 +417,9 @@ export default function OwnerInventoryPage() {
                       </span>
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedProduct(product)}>
+                        Détails
+                      </Button>
                       <Button variant="outline" size="sm" onClick={() => handleOpenEdit(product)}>
                         Modifier
                       </Button>
@@ -408,12 +451,18 @@ export default function OwnerInventoryPage() {
       <AnimatedSheet isOpen={isSheetOpen} onClose={closeSheet}>
         <div className="p-4">
           <ProductForm
-            product={editingProduct} 
-            onClose={closeSheet}     
-            exchangeRate={exchangeRate} 
+            product={editingProduct}
+            onClose={closeSheet}
+            exchangeRate={exchangeRate}
           />
         </div>
       </AnimatedSheet>
+
+      <ProductDetailModal
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+        exchangeRate={exchangeRate}
+      />
     </section>
   );
 }

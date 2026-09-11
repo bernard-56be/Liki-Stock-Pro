@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { X, QrCode, Package, CheckCircle, XCircle } from 'lucide-react'
-import { getProductQrDetails, type QrDetail, type InventoryGroupedItem } from '@/lib/actions/inventory-summary'
+import { getProductQrDetails, type QrDetail } from '@/lib/actions/inventory-summary'
+import type { Product } from '@/lib/actions/inventory'
 
 interface Props {
-  product: InventoryGroupedItem | null
+  product: Product | null
   onClose: () => void
   exchangeRate: number
 }
@@ -15,9 +16,9 @@ export default function ProductDetailModal({ product, onClose, exchangeRate }: P
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!product || product.qr_mode !== 'unique') return
+    if (!product || product.qrMode !== 'unique') return
     setLoading(true)
-    getProductQrDetails(product.product_id)
+    getProductQrDetails(product.id)
       .then((res) => setQrs(res.data || []))
       .finally(() => setLoading(false))
   }, [product])
@@ -29,7 +30,7 @@ export default function ProductDetailModal({ product, onClose, exchangeRate }: P
     return `${Math.round(value).toLocaleString('fr-FR')} FC`
   }
 
-  const totalValueUSD = product.quantity * product.sale_price
+  const totalValueUSD = product.quantity * product.salePrice
   const totalValueCDF = totalValueUSD * exchangeRate
 
   const getStatusBadge = (status: string) => {
@@ -57,6 +58,48 @@ export default function ProductDetailModal({ product, onClose, exchangeRate }: P
     }
   }
 
+  const handlePrint = () => {
+    if (!product || qrs.length === 0) return
+
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+
+    const qrHtml = qrs
+      .map(
+        (qr) => `
+          <div style="page-break-inside: avoid; display: inline-block; margin: 10px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; text-align: center;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+              qr.qr_code
+            )}" alt="${qr.qr_code}" />
+            <p style="font-family: monospace; font-size: 11px; margin-top: 5px;">${qr.qr_code}</p>
+            <p style="font-size: 11px; color: #555; margin: 2px 0 0 0;">${product.name}</p>
+          </div>
+        `
+      )
+      .join('')
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>QR Codes - ${product.name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { font-size: 18px; margin-bottom: 20px; }
+            @media print { button { display: none; } }
+          </style>
+        </head>
+        <body>
+          <h1>QR Codes - ${product.name} (${qrs.length})</h1>
+          <button onclick="window.print()" style="margin-bottom: 20px; padding: 10px 20px; background: #4F46E5; color: white; border: none; border-radius: 8px; cursor: pointer;">
+            🖨️ Imprimer
+          </button>
+          <div>${qrHtml}</div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
@@ -65,9 +108,9 @@ export default function ProductDetailModal({ product, onClose, exchangeRate }: P
             <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Mode :{' '}
-              {product.qr_mode === 'none'
+              {product.qrMode === 'none'
                 ? 'Sans QR'
-                : product.qr_mode === 'model'
+                : product.qrMode === 'model'
                 ? 'QR Modèle'
                 : 'QR Unique'}
             </p>
@@ -92,23 +135,33 @@ export default function ProductDetailModal({ product, onClose, exchangeRate }: P
           <div className="rounded-xl bg-gray-50 p-3">
             <p className="text-xs text-gray-500 uppercase font-semibold">Prix d&apos;achat</p>
             <p className="text-sm font-medium text-gray-700 mt-1">
-              {formatPrice(product.purchase_price, product.currency)}
+              {formatPrice(product.purchasePrice, product.currency)}
             </p>
           </div>
           <div className="rounded-xl bg-gray-50 p-3">
             <p className="text-xs text-gray-500 uppercase font-semibold">Prix de vente</p>
             <p className="text-sm font-medium text-gray-700 mt-1">
-              {formatPrice(product.sale_price, product.currency)}
+              {formatPrice(product.salePrice, product.currency)}
             </p>
           </div>
         </div>
 
-        {product.qr_mode === 'unique' && (
+        {product.qrMode === 'unique' && (
           <div className="p-5">
-            <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-              <QrCode className="h-4 w-4" />
-              Codes QR ({qrs.length})
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <QrCode className="h-4 w-4" />
+                Codes QR ({qrs.length})
+              </h3>
+              {qrs.length > 0 && (
+                <button
+                  onClick={handlePrint}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                >
+                  🖨️ Imprimer les QR
+                </button>
+              )}
+            </div>
             {loading ? (
               <p className="text-sm text-gray-500">Chargement...</p>
             ) : qrs.length === 0 ? (
@@ -120,8 +173,16 @@ export default function ProductDetailModal({ product, onClose, exchangeRate }: P
                     key={qr.id}
                     className="flex items-center justify-between rounded-lg border border-gray-100 p-3"
                   >
-                    <div className="flex items-center gap-2">
-                      <QrCode className="h-4 w-4 text-gray-400" />
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent(
+                          qr.qr_code
+                        )}`}
+                        alt={qr.qr_code}
+                        width={48}
+                        height={48}
+                        className="rounded border border-gray-200"
+                      />
                       <span className="text-sm font-mono text-gray-700">{qr.qr_code}</span>
                     </div>
                     {getStatusBadge(qr.status)}
