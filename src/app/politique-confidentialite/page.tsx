@@ -2,7 +2,7 @@ import { DashboardClientLayout } from '@/app/dashboard/(shell)/DashboardClientLa
 
 export default function PrivacyPage() {
   return (
-    <DashboardClientLayout role="owner" userName="Légal" userAvatar={null}>
+    <DashboardClientLayout role="owner" userName="Légal" userAvatar={null} currentRate={0}>
       <div className="max-w-3xl mx-auto p-6 md:p-10 text-gray-800">
         <h1 className="text-3xl font-bold mb-6">Politique de Confidentialité</h1>
         <p className="mb-4 text-gray-600">Dernière mise à jour : {new Date().getFullYear()}</p>
