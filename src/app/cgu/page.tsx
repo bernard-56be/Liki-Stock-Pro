@@ -2,11 +2,16 @@ import { DashboardClientLayout } from '@/app/dashboard/(shell)/DashboardClientLa
 
 export default function CguPage() {
   return (
-    <DashboardClientLayout role="owner" userName="Légal" userAvatar={null}>
+    <DashboardClientLayout
+      role="owner"
+      userName="Légal"
+      userAvatar={null}
+      currentRate={0}
+    >
       <div className="max-w-3xl mx-auto p-6 md:p-10 text-gray-800">
         <h1 className="text-3xl font-bold mb-6">Conditions Générales d'Utilisation (CGU)</h1>
         <p className="mb-4 text-gray-600">Dernière mise à jour : {new Date().getFullYear()}</p>
-        
+
         <section className="mb-6">
           <h2 className="text-xl font-semibold mb-2">1. Acceptation des Conditions</h2>
           <p className="text-gray-700 leading-relaxed">
