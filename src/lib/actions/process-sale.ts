@@ -7,7 +7,8 @@ export async function processSale(
   productId: string,
   quantity: number,
   unitPrice: number,
-  currency: string = "USD"
+  currency: string = "USD",
+  qrIds?: string[]
 ) {
   if (!productId || typeof productId !== "string") {
     return { success: false, message: "Produit invalide." };
@@ -54,6 +55,7 @@ export async function processSale(
       p_unit_price: unitPrice,
       p_exchange_rate: rate,
       p_currency: currency,
+      p_qr_ids: qrIds || null,
     });
 
     if (error) {
@@ -61,7 +63,6 @@ export async function processSale(
       return { success: false, message: "Erreur serveur lors de la vente." };
     }
 
-    // 5. Gestion des alertes de stock critique (Notification automatique au propriétaire)
     if (data.success) {
       const newStock = data.new_stock;
 
