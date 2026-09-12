@@ -12,27 +12,37 @@ interface CurrencyInputProps {
   disabled?: boolean;
 }
 
-export const CurrencyInput = ({ valueUsd = 0, onChange, label = 'Prix', disabled = false }: CurrencyInputProps) => {
+export const CurrencyInput = ({
+  valueUsd = 0,
+  onChange,
+  label = 'Prix',
+  disabled = false,
+}: CurrencyInputProps) => {
   const [rate, setRate] = useState<number | null>(null);
   const [internalValue, setInternalValue] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRate = async () => {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
+
       const { data: profile } = await supabase
         .from('profiles')
-        .select('shop_id')
+        .select('boutique_id')
         .eq('id', user.id)
         .single();
-      if (profile?.shop_id) {
-        const { data: shop } = await supabase
-          .from('shops')
+
+      if (profile?.boutique_id) {
+        const { data: boutique } = await supabase
+          .from('boutiques')
           .select('exchange_rate')
-          .eq('id', profile.shop_id)
+          .eq('id', profile.boutique_id)
           .single();
-        if (shop?.exchange_rate) setRate(shop.exchange_rate);
+
+        if (boutique?.exchange_rate) setRate(boutique.exchange_rate);
       }
     };
     fetchRate();
@@ -40,27 +50,35 @@ export const CurrencyInput = ({ valueUsd = 0, onChange, label = 'Prix', disabled
 
   const usd = internalValue !== null ? internalValue : valueUsd.toString();
 
-  const handleUsdChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setInternalValue(e.target.value);
-    if (rate) {
-      const usdNum = parseFloat(e.target.value) || 0;
-      const cdfNum = convertUsdToCdf(usdNum, rate);
-      onChange?.(usdNum, cdfNum);
-    }
-  }, [rate, onChange]);
+  const handleUsdChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setInternalValue(e.target.value);
+      if (rate) {
+        const usdNum = parseFloat(e.target.value) || 0;
+        const cdfNum = convertUsdToCdf(usdNum, rate);
+        onChange?.(usdNum, cdfNum);
+      }
+    },
+    [rate, onChange]
+  );
 
-  const handleCdfChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value) || 0;
-    if (rate && rate > 0) {
-      const newUsd = convertCdfToUsd(val, rate);
-      setInternalValue(newUsd.toFixed(2));
-      onChange?.(parseFloat(newUsd.toFixed(2)), val);
-    }
-  }, [rate, onChange]);
+  const handleCdfChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = parseFloat(e.target.value) || 0;
+      if (rate && rate > 0) {
+        const newUsd = convertCdfToUsd(val, rate);
+        setInternalValue(newUsd.toFixed(2));
+        onChange?.(parseFloat(newUsd.toFixed(2)), val);
+      }
+    },
+    [rate, onChange]
+  );
 
   const cdf = rate ? convertUsdToCdf(parseFloat(usd) || 0, rate).toFixed(0) : '';
 
-  if (!rate) return <div className="text-sm text-gray-400">Chargement taux...</div>;
+  if (!rate) {
+    return <div className="text-sm text-gray-400">Chargement taux...</div>;
+  }
 
   return (
     <div className="space-y-2">
